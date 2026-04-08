@@ -42,39 +42,55 @@ my_model.save_weights() # 儿子没有写，但继承了老爸的家产，直接
 my_model.forward(10)    # 儿子重写了，所以执行儿子自己的前向传播逻辑
 
 
-print("\n"+"="*10, "2. 多继承与 MRO (方法解析顺序)", "="*10)
 
-# 定义两个有冲突的父类
-class TextEncoder:
-    def encode(self):
-        print("[TextEncoder] 提取文本特征")
-    
-    def status(self):
-        print("状态: 文本模块正常")
+print("="*10, "菱形继承战场：爷爷、大伯、二伯与你", "="*10)
 
-class ImageEncoder:
-    def encode(self):
-        print("[ImageEncoder] 提取图像特征")
-        
-    def status(self):
-        print("状态: 图像模块正常")
+# A：共同的最顶层基类 (爷爷)
+class GrandBase:
+    def __init__(self):
+        print("[GrandBase] 爷爷被初始化了！(最底层的基因)")
+        self.health = 100
 
-# a=3: 多继承混血儿。注意括号里的顺序！(TextEncoder 在前)
-class MultiModalModel(TextEncoder, ImageEncoder):
-    def encode_all(self):
-        print("[MultiModalModel] 开始多模态融合...")
-        # 这个类自己没有 encode() 和 status()，它会去父类里找
-        self.encode() 
-        self.status()
+# B：左侧父类 (大伯)
+class LeftParent(GrandBase):
+    def __init__(self):
+        # a=1: 这里的 super() 会去哪？在单继承里它是找 GrandBase。
+        # 但在菱形继承里，它的下一个目标其实是 RightParent！这就是 C3 算法的魔力。
+        super().__init__()
+        print("[LeftParent] 大伯被初始化了！注入《太极·刚》基因")
+        self.attack = 80
 
-multimodal = MultiModalModel()
-print("-" * 20)
-multimodal.encode_all() 
-# 思考：它到底调用的是 Text 的还是 Image 的？
-# 答案：按照 MRO！
+# C：右侧父类 (二伯)
+class RightParent(GrandBase):
+    def __init__(self):
+        # a=2: 这里的 super() 才会真正去找 GrandBase 爷爷。
+        super().__init__()
+        print("[RightParent] 二伯被初始化了！注入《太极·柔》基因")
+        self.defense = 80
 
-print("\n[揭秘 MRO 族谱顺位]")
-# a=4: 查看 Python 底层为你排好的继承顺序
-# 规则是从左到右，深度优先，但在多继承钻石结构中遵循 C3 算法
-for cls in MultiModalModel.mro():
-    print(f" -> {cls.__name__}")
+# D：你 (混血儿，同时继承大伯和二伯)
+# a=3: 注意这里的顺序，Left 在前，Right 在后
+class Child(LeftParent, RightParent):
+    def __init__(self):
+        # a=4: 开始击鼓传花！呼叫 MRO 链条的下一个
+        super().__init__()
+        print("[Child] 你被初始化了！集齐所有基因，天下无敌！")
+
+# ================= 见证奇迹的时刻 =================
+
+print("\n【1. 查看 C3 算法生成的绝对族谱 (MRO)】")
+# 打印 MRO 列表。这就是 Python 底层 C3 算法算出来的优先级！
+mro_list = Child.mro()
+for i, cls in enumerate(mro_list):
+    print(f"顺位 {i}: {cls.__name__}")
+# 预期输出: Child -> LeftParent -> RightParent -> GrandBase -> object
+
+
+print("\n【2. 实例化对象，触发击鼓传花】")
+# a=5: 请在这里打断点！单步调试进入 __init__
+# 执行路径将会是：Child -> LeftParent -> RightParent -> GrandBase
+# 打印出来的顺序刚好是【反向】的，因为大家都在等超类的 __init__ 执行完毕再执行自己的 print！
+my_hero = Child()
+
+print("\n【3. 检查最终状态】")
+print(f"你的属性: 生命 {my_hero.health}, 攻击 {my_hero.attack}, 防御 {my_hero.defense}")
