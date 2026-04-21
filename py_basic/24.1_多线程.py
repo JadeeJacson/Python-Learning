@@ -1,61 +1,106 @@
-"""
-【Python 多线程兵法：GIL 下的 I/O 破局之道】
-请在 VS Code 中运行。仔细观察打印的顺序，体会“并发”的魔力与“锁”的秩序。
-"""
+# ==============================================================================
+# 【核心概念讲解 & 底层逻辑：费曼技巧讲透多线程与GIL】
+# ==============================================================================
+# 1. 什么是多线程 (Thread)？
+#    【费曼讲解】：想象你是一个包工头，你的程序是一个工地。单线程就是只有1个工人在干活；
+#    多线程就是你雇了多个工人（Thread）同时干活。他们共享同一个工地（内存空间）。
+# 
+# 2. 为什么需要锁 (Lock / RLock)？
+#    【费曼讲解】：多个工人共用一个洗手间（共享变量），如果不排队（加锁），就会冲进去打架（数据错乱，竞态条件）。
+#    Lock就是洗手间门上的一把锁。RLock（可重入锁）是高级锁，同一个工人可以带着这把钥匙多次进出多个相连的门，不会把自己锁死。
+# 
+# 3. 什么是信号量 (Semaphore)？
+#    【费曼讲解】：工地只有3个免费停车位。Semaphore(3) 就是保安，只允许3辆车同时进来，后面的车得等前面的开走。
+#    常用于控制并发数量（如数据库连接池、限流）。
+# 
+# 4. 什么是事件 (Event)？
+#    【费曼讲解】：包工头手里的红绿灯。红灯时所有工人原地等待（event.wait()），
+#    绿灯亮起（event.set()），所有工人立刻一起开始干活。用于线程间的协调通信。
+# 
+# 5. 终极Boss：GIL (Global Interpreter Lock 全局解释器锁)
+#    【底层逻辑】：Python解释器（CPython）里有个霸道的规定：
+#    "同一时刻，即使你有100个CPU核心，也只能有1个线程在执行Python字节码！"
+#    【结论】：Python的多线程是“伪并行”。
+#    - 对于CPU密集型（死算代码，如大量加减乘除）：多线程不仅没用，反而因为频繁切换线程，比单线程还慢！
+#    - 对于I/O密集型（网络请求、读写文件、爬虫）：多线程有奇效！因为一个工人等网络下载时，会自动交出执行权，其他工人可以趁机干活。
+
 import threading
 import time
 import random
 
-print("="*10, "大厂业务场景：高并发 AI 语料爬取与处理", "="*10)
+# ==============================================================================
+# 【可运行的实战代码：模拟多线程经典场景】
+# ==============================================================================
 
-# 1. 兵器库初始化
-total_downloaded = 0                 # 共享的全局变量（极度危险，必须加锁）
-data_lock = threading.Lock()         # 互斥锁：保护 total_downloaded 不被写乱
-api_limiter = threading.Semaphore(3) # 信号量：限制并发，最多同时允许 3 个线程下载
-start_gun = threading.Event()        # 事件发令枪：让所有线程就位后一起开始
+# 全局共享变量
+shared_counter = 0
 
-def worker_thread(worker_id):
-    """打工人的标准作业流"""
-    print(f"👷 [打工人 {worker_id}] 已就位，等待发令枪...")
+# 1. Lock: 保护共享变量
+counter_lock = threading.Lock() # 基础锁
+
+def worker_add(worker_id):
+    global shared_counter
+    # 模拟干点别的事 (I/O操作会释放GIL)
+    time.sleep(random.uniform(0.01, 0.05)) 
     
-    # a=1: Event 阻塞。所有线程卡在这里，直到主线程 set()
-    start_gun.wait() 
+    # 【常见用法】：使用 with 语句自动获取和释放锁，防止忘记释放导致死锁
+    with counter_lock:
+        # 进入临界区，此时只有一个线程能执行以下代码
+        temp = shared_counter
+        temp += 1
+        shared_counter = temp
+        print(f"工人 {worker_id} 将计数器加到了 {shared_counter}")
+
+# 2. Semaphore: 控制并发数量 (如限制最多2个线程同时下载)
+pool_sema = threading.Semaphore(2)
+
+def worker_download(worker_id):
+    with pool_sema: # 保安：最多进2个
+        print(f"[下载任务] {worker_id} 开始下载...")
+        time.sleep(0.1) # 模拟下载耗时
+        print(f"[下载任务] {worker_id} 下载完成！")
+
+# 3. Event: 线程协调 (如主线程准备好数据后，通知工作线程开工)
+start_event = threading.Event()
+
+def worker_wait_for_signal(worker_id):
+    print(f"(等待者 {worker_id}) 就绪，等待发令枪...")
+    start_event.wait() # 阻塞在这里，等待红灯变绿灯
+    print(f"(等待者 {worker_id}) 听到枪声，冲啊！")
+
+if __name__ == "__main__":
+    print("--- 场景1：Lock 保护共享数据 ---")
+    threads = []
+    for i in range(5):
+        t = threading.Thread(target=worker_add, args=(i,)) # 创建线程
+        threads.append(t)
+        t.start() # 启动线程
     
-    # a=2: Semaphore 限制。去保安那里领令牌，最多3人同时执行
-    with api_limiter:
-        print(f"   🚀 [打工人 {worker_id}] 拿到令牌，开始下载语料...")
-        # 模拟 I/O 密集型耗时操作 (此时 GIL 会被主动释放，其他线程可以趁机运行！)
-        time.sleep(random.uniform(0.5, 1.5)) 
-        print(f"   ✅ [打工人 {worker_id}] 下载完毕！准备写入全局数据库。")
-        
-        # a=3: Lock 保护。开始修改共享变量了，必须拿唯一钥匙！
-        # 如果不用 with 语法，你需要手动 data_lock.acquire() 和 data_lock.release()
-        with data_lock:
-            global total_downloaded
-            # 这里的读写操作如果不加锁，极易发生覆盖！
-            local_copy = total_downloaded
-            # 假装这里有一些轻量级的 CPU 计算
-            local_copy += 1 
-            total_downloaded = local_copy
-            print(f"      🔒 [打工人 {worker_id}] 修改了总数: {total_downloaded}")
+    for t in threads:
+        t.join() # 【关键方法】：主线程阻塞，等待子线程t执行完毕再往下走
+    print(f"最终计数器结果: {shared_counter} (预期为5)\n")
 
-# 2. 招募 5 个打工人 (创建线程)
-threads = []
-for i in range(1, 6):
-    # target 指定要跑的函数，args 给函数传参 (注意必须是个元组，哪怕只有一个元素也要加逗号)
-    t = threading.Thread(target=worker_thread, args=(i,))
-    threads.append(t)
-    t.start() # start() 只是启动线程，但线程内部目前卡在了 start_gun.wait()
+    print("--- 场景2：Semaphore 限制并发 ---")
+    dl_threads = []
+    for i in range(5):
+        t = threading.Thread(target=worker_download, args=(f"文件{i}",))
+        dl_threads.append(t)
+        t.start()
+    for t in dl_threads: t.join()
+    print()
 
-print("\n👑 [主线程] 老板巡视一圈，确认大家都准备好了。")
-time.sleep(1) # 假装老板喝了口茶
-print("👑 [主线程] 砰！发令枪响，开始干活！\n")
+    print("--- 场景3：Event 统一发令 ---")
+    runner_threads = []
+    for i in range(3):
+        t = threading.Thread(target=worker_wait_for_signal, args=(i,))
+        runner_threads.append(t)
+        t.start()
+    
+    print("[主线程] 裁判正在检查跑道...")
+    time.sleep(0.5)
+    print("[主线程] 砰！(发令枪响)")
+    start_event.set() # 【关键方法】：绿灯亮起，唤醒所有wait的线程
+    # 注意：event.clear() 可以重新把绿灯变回红灯
 
-# a=4: Event 触发！所有等待的线程瞬间苏醒被放行
-start_gun.set()
-
-# a=5: 极其关键的一步！主线程必须等待所有子线程干完活，再往下走
-for t in threads:
-    t.join() 
-
-print(f"\n🎉 [主线程] 所有打工人下班！最终采集到的语料总数: {total_downloaded}")
+    for t in runner_threads: t.join()
+    print("\n所有演示执行完毕！")
