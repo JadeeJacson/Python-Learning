@@ -203,3 +203,46 @@ tensor3 = tensor.clone()                # 方式2：clone tensor
 # np.int32    ↔  torch.int32
 # np.int64    ↔  torch.int64   (torch.LongTensor)    ← 标签/索引常用
 # np.bool_    ↔  torch.bool
+
+print("\n==================== 16. 最后总结 ====================")
+
+"""
+copy：
+    真复制，新内存，改副本不影响原数组。
+
+view：
+    不复制，共享内存，改 view 可能影响原数组。
+
+stride：
+    表示每个维度走一步跨多少字节。
+
+contiguous：
+    表示内存是否连续，影响性能和库衔接。
+
+C order：
+    行优先存储，NumPy 默认常见。
+
+F order：
+    列优先存储，科学计算和 Fortran 常见。
+
+save/load：
+    保存和读取单个 .npy 数组。
+
+savez：
+    一个 .npz 文件保存多个数组。
+
+savetxt/loadtxt：
+    文本格式保存和读取，适合简单可读数据。
+
+tolist：
+    NumPy 转 Python list。
+
+to_numpy：
+    Pandas 转 NumPy，推荐写法。
+
+values：
+    Pandas 旧式取底层数据方式，不如 to_numpy 清晰。
+
+from_numpy：
+    NumPy 转 PyTorch Tensor，通常共享内存。
+"""
